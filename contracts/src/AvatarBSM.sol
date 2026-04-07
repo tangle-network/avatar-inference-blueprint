@@ -44,15 +44,16 @@ contract AvatarBSM is Initializable, UUPSUpgradeable, BlueprintServiceManagerBas
     AvatarModelConfig public avatarConfig;
     mapping(address => OperatorCapabilities) public operatorCaps;
     EnumerableSet.AddressSet private _operators;
-    address public tsUSD;
+    /// The accepted payment token (e.g. USDC wrapped via VAnchor).
+    address public paymentToken;
 
     // ── Initialization ──────────────────────────────────────────────────
 
-    function initialize(address _tsUSD) external initializer {
+    function initialize(address _paymentToken) external initializer {
         __UUPSUpgradeable_init();
-        tsUSD = _tsUSD;
+        paymentToken = _paymentToken;
         avatarConfig = AvatarModelConfig({
-            pricePerSecond: 500_000,     // 0.50 tsUSD/second
+            pricePerSecond: 500_000,     // 0.50 payment token units/second
             maxDurationSeconds: 300,     // 5 minutes
             minGpuVramMib: 0,            // 0 = no GPU required (API proxy operators)
             enabled: true

@@ -25,7 +25,7 @@ pub struct AvatarConfig {
     /// ComfyUI endpoint (required when backend = "comfyui").
     pub comfyui_endpoint: Option<String>,
 
-    /// Price per second of generated avatar video (tsUSD base units).
+    /// Price per second of generated avatar video (payment token base units, e.g. 500000 = 0.50 USDC with 6 decimals).
     #[serde(default = "default_price_per_second")]
     pub price_per_second: u64,
 
@@ -38,7 +38,7 @@ fn default_backend() -> String {
     "heygen".to_string()
 }
 fn default_price_per_second() -> u64 {
-    500_000 // 0.50 tsUSD per second
+    500_000 // 0.50 payment token per second
 }
 fn default_max_duration() -> u64 {
     300 // 5 minutes
