@@ -108,8 +108,8 @@ impl AvatarBackend {
         self.config.max_duration_seconds
     }
 
-    pub fn price_per_second(&self) -> u64 {
-        self.config.price_per_second
+    pub fn price_per_compute_second(&self) -> u64 {
+        self.config.price_per_compute_second
     }
 
     // ── HeyGen ──────────────────────────────────────────────────────────

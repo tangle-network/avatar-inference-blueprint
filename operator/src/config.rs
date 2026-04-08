@@ -25,9 +25,10 @@ pub struct AvatarConfig {
     /// ComfyUI endpoint (required when backend = "comfyui").
     pub comfyui_endpoint: Option<String>,
 
-    /// Price per second of generated avatar video (payment token base units, e.g. 500000 = 0.50 USDC with 6 decimals).
-    #[serde(default = "default_price_per_second")]
-    pub price_per_second: u64,
+    /// Price per second of GPU compute time (payment token base units, e.g. 500000 = 0.50 USDC with 6 decimals).
+    /// Billing is based on wall-clock compute time, not output video duration.
+    #[serde(default = "default_price_per_compute_second")]
+    pub price_per_compute_second: u64,
 
     /// Maximum video duration in seconds.
     #[serde(default = "default_max_duration")]
@@ -37,7 +38,7 @@ pub struct AvatarConfig {
 fn default_backend() -> String {
     "heygen".to_string()
 }
-fn default_price_per_second() -> u64 {
+fn default_price_per_compute_second() -> u64 {
     500_000 // 0.50 payment token per second
 }
 fn default_max_duration() -> u64 {
@@ -69,7 +70,7 @@ impl Default for AvatarConfig {
             did_api_key: None,
             replicate_api_token: None,
             comfyui_endpoint: None,
-            price_per_second: default_price_per_second(),
+            price_per_compute_second: default_price_per_compute_second(),
             max_duration_seconds: default_max_duration(),
         }
     }
@@ -83,7 +84,7 @@ mod tests {
     fn default_avatar_config() {
         let cfg = AvatarConfig::default();
         assert_eq!(cfg.backend, "heygen");
-        assert_eq!(cfg.price_per_second, 500_000);
+        assert_eq!(cfg.price_per_compute_second, 500_000);
         assert_eq!(cfg.max_duration_seconds, 300);
     }
 }

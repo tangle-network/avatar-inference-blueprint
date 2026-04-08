@@ -26,7 +26,7 @@ async fn main() -> Result<(), blueprint_sdk::Error> {
 
     tracing::info!(
         backend = %config.avatar.backend,
-        price_per_second = config.avatar.price_per_second,
+        price_per_compute_second = config.avatar.price_per_compute_second,
         max_duration = config.avatar.max_duration_seconds,
         "Config loaded"
     );

@@ -44,7 +44,7 @@ impl AvatarAppBackend {
     pub fn new(config: Arc<OperatorConfig>) -> Self {
         Self {
             cost_model: Arc::new(PerSecondCostModel {
-                price_per_second: config.avatar.price_per_second,
+                price_per_second: config.avatar.price_per_compute_second,
             }),
             avatar: Arc::new(AvatarBackend::new(Arc::new(config.avatar.clone()))),
             jobs: Arc::new(DashMap::new()),
@@ -123,8 +123,10 @@ async fn generate(
         Err(resp) => return resp,
     };
 
-    // Billing gate — estimate based on requested duration
-    let estimated_cost = duration * backend.avatar.price_per_second();
+    // Billing gate — estimate based on expected GPU compute time (not output duration).
+    // Conservative: avatar generation typically takes ~10x the output duration.
+    let estimated_compute_secs = duration * 10;
+    let estimated_cost = estimated_compute_secs * backend.avatar.price_per_compute_second();
     let (spend_auth, preauth) =
         match billing_gate(&state, &headers, None, estimated_cost).await {
             Ok(v) => v,
@@ -155,34 +157,32 @@ async fn generate(
     };
     backend.jobs.insert(job_id.clone(), info.clone());
 
-    // Spawn background poller that settles billing on completion
+    // Spawn background poller that settles billing on completion.
+    // Track wall-clock compute time for accurate billing.
     let avatar = backend.avatar.clone();
     let cost_model = backend.cost_model.clone();
     let jobs = backend.jobs.clone();
     let billing = state.billing.clone();
     let jid = job_id.clone();
     tokio::spawn(async move {
+        let start_time = std::time::Instant::now();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
             interval.tick().await;
             match avatar.poll(&jid).await {
                 Ok(info) => {
                     let done = matches!(info.status, JobStatus::Completed | JobStatus::Failed);
-                    let actual_duration = info
-                        .result
-                        .as_ref()
-                        .map(|r| r.duration_seconds)
-                        .unwrap_or(0.0);
 
                     jobs.insert(jid.clone(), info.clone());
 
                     if done {
-                        // Settle billing based on actual duration
+                        // Settle billing based on actual GPU compute time (wall-clock)
+                        let compute_secs = start_time.elapsed().as_secs();
                         if let Some(ref auth) = spend_auth {
                             let cost = cost_model.calculate_cost(&CostParams {
                                 extra: std::collections::HashMap::from([(
                                     "centiseconds".into(),
-                                    (actual_duration * 100.0) as u64,
+                                    compute_secs * 100,
                                 )]),
                                 ..Default::default()
                             });
