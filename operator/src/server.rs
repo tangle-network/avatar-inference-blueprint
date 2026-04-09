@@ -9,12 +9,14 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
+use serde::Deserialize;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use dashmap::DashMap;
 use tokio::sync::watch;
+use tokio_stream::StreamExt;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
@@ -26,11 +28,33 @@ use tangle_inference_core::server::{
 };
 use tangle_inference_core::{AppState, CostModel, CostParams, PerSecondCostModel, RequestGuard};
 
+use blueprint_webhooks::notifier::{
+    JobEvent, JobNotifier, NotifierConfig, JobStatus as NotifierJobStatus,
+};
+
 use crate::avatar::{AvatarBackend, AvatarRequest, JobInfo, JobStatus};
 use crate::config::OperatorConfig;
 
+/// HTTP request body for the generate endpoint.
+/// Wraps `AvatarRequest` with an optional webhook callback URL.
+#[derive(Debug, Deserialize)]
+struct GenerateRequest {
+    #[serde(flatten)]
+    avatar: AvatarRequest,
+    /// Optional webhook URL for push notifications on job status changes.
+    #[serde(default)]
+    webhook_url: Option<String>,
+}
+
 /// In-memory job registry for async polling.
-type Jobs = Arc<DashMap<String, JobInfo>>;
+type Jobs = Arc<DashMap<String, JobEntry>>;
+
+/// Per-job metadata including optional webhook URL.
+#[derive(Debug, Clone)]
+pub struct JobEntry {
+    pub info: JobInfo,
+    pub webhook_url: Option<String>,
+}
 
 /// Backend attached to AppState.
 pub struct AvatarAppBackend {
@@ -38,16 +62,19 @@ pub struct AvatarAppBackend {
     pub config: Arc<OperatorConfig>,
     pub cost_model: Arc<PerSecondCostModel>,
     pub jobs: Jobs,
+    pub notifier: Arc<JobNotifier>,
 }
 
 impl AvatarAppBackend {
     pub fn new(config: Arc<OperatorConfig>) -> Self {
+        let notifier = Arc::new(JobNotifier::new(NotifierConfig::default()));
         Self {
             cost_model: Arc::new(PerSecondCostModel {
                 price_per_second: config.avatar.price_per_compute_second,
             }),
             avatar: Arc::new(AvatarBackend::new(Arc::new(config.avatar.clone()))),
             jobs: Arc::new(DashMap::new()),
+            notifier,
             config,
         }
     }
@@ -59,6 +86,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/v1/avatar/generate", post(generate))
         .route("/v1/avatar/jobs/{job_id}", get(get_job))
+        .route("/v1/jobs/{job_id}/events", get(sse_handler))
         .route("/health", get(health))
         .route("/health/gpu", get(gpu_health_handler))
         .route("/metrics", get(metrics_handler))
@@ -100,11 +128,14 @@ pub async fn start(
 async fn generate(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(req): Json<AvatarRequest>,
+    Json(req): Json<GenerateRequest>,
 ) -> Response {
     let backend = state
         .backend::<AvatarAppBackend>()
         .expect("AvatarAppBackend");
+
+    let webhook_url = req.webhook_url.clone();
+    let req = req.avatar;
 
     // Validate duration
     let duration = req.duration_seconds.min(backend.avatar.max_duration());
@@ -155,7 +186,26 @@ async fn generate(
         result: None,
         error: None,
     };
-    backend.jobs.insert(job_id.clone(), info.clone());
+    backend.jobs.insert(
+        job_id.clone(),
+        JobEntry {
+            info: info.clone(),
+            webhook_url: webhook_url.clone(),
+        },
+    );
+
+    // Notify: job is now processing
+    let notifier = backend.notifier.clone();
+    let _ = notifier
+        .notify(
+            &job_id,
+            JobEvent {
+                status: NotifierJobStatus::Processing,
+                ..Default::default()
+            },
+            webhook_url.as_deref(),
+        )
+        .await;
 
     // Spawn background poller that settles billing on completion.
     // Track wall-clock compute time for accurate billing.
@@ -173,7 +223,32 @@ async fn generate(
                 Ok(info) => {
                     let done = matches!(info.status, JobStatus::Completed | JobStatus::Failed);
 
-                    jobs.insert(jid.clone(), info.clone());
+                    jobs.insert(
+                        jid.clone(),
+                        JobEntry {
+                            info: info.clone(),
+                            webhook_url: webhook_url.clone(),
+                        },
+                    );
+
+                    // Emit notification on status change
+                    let notifier_status = match info.status {
+                        JobStatus::Completed => NotifierJobStatus::Completed,
+                        JobStatus::Failed => NotifierJobStatus::Failed,
+                        JobStatus::Processing => NotifierJobStatus::Processing,
+                        JobStatus::Queued => NotifierJobStatus::Queued,
+                    };
+                    let event = JobEvent {
+                        status: notifier_status,
+                        result: info.result.as_ref().map(|r| {
+                            serde_json::to_value(r).unwrap_or_default()
+                        }),
+                        error: info.error.clone(),
+                        ..Default::default()
+                    };
+                    let _ = notifier
+                        .notify(&jid, event, webhook_url.as_deref())
+                        .await;
 
                     if done {
                         // Settle billing based on actual GPU compute time (wall-clock)
@@ -217,7 +292,7 @@ async fn get_job(
         .expect("AvatarAppBackend");
 
     match backend.jobs.get(&job_id) {
-        Some(info) => Json(info.value().clone()).into_response(),
+        Some(entry) => Json(entry.value().info.clone()).into_response(),
         None => error_response(
             StatusCode::NOT_FOUND,
             format!("job {job_id} not found"),
@@ -225,6 +300,32 @@ async fn get_job(
             "job_not_found",
         ),
     }
+}
+
+async fn sse_handler(
+    State(state): State<AppState>,
+    Path(job_id): Path<String>,
+) -> axum::response::Sse<impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>> {
+    let backend = state
+        .backend::<AvatarAppBackend>()
+        .expect("AvatarAppBackend");
+    let rx = backend.notifier.subscribe(&job_id).await;
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
+        Ok(event) => {
+            let data = serde_json::to_string(&event)
+                .unwrap_or_else(|_| r#"{"error":"serialize"}"#.to_string());
+            let sse_event = axum::response::sse::Event::default()
+                .event(event.status.to_string())
+                .data(data);
+            Some(Ok(sse_event))
+        }
+        Err(_) => None,
+    });
+    axum::response::Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("ping"),
+    )
 }
 
 async fn health() -> Json<serde_json::Value> {
