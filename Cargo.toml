@@ -24,3 +24,6 @@ hex = "0.4"
 k256 = { version = "0.13", features = ["ecdsa"] }
 prometheus = "0.13"
 blueprint-webhooks = { git = "https://github.com/tangle-network/blueprint", branch = "feat/wire-remote-gpu-provisioning", features = ["notifier"] }
+
+[patch."https://github.com/tangle-network/blueprint"]
+blueprint-webhooks = { path = "../blueprint/crates/webhooks" }

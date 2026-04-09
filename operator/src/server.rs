@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -44,6 +44,15 @@ struct GenerateRequest {
     /// Optional webhook URL for push notifications on job status changes.
     #[serde(default)]
     webhook_url: Option<String>,
+}
+
+/// 202 Accepted response for the generate endpoint.
+#[derive(Debug, Serialize)]
+struct GenerateResponse {
+    job_id: String,
+    status: JobStatus,
+    /// Bearer token for connecting to the SSE events endpoint.
+    sse_token: String,
 }
 
 /// In-memory job registry for async polling.
@@ -179,6 +188,9 @@ async fn generate(
         }
     };
 
+    // Register job with notifier to get SSE auth token
+    let sse_token = backend.notifier.register_job(&job_id).await;
+
     // Register job
     let info = JobInfo {
         job_id: job_id.clone(),
@@ -279,8 +291,16 @@ async fn generate(
 
     guard.set_success();
 
-    // Return 202 Accepted with job info
-    (StatusCode::ACCEPTED, Json(info)).into_response()
+    // Return 202 Accepted with job info and SSE auth token
+    (
+        StatusCode::ACCEPTED,
+        Json(GenerateResponse {
+            job_id: info.job_id,
+            status: info.status,
+            sse_token,
+        }),
+    )
+        .into_response()
 }
 
 async fn get_job(
@@ -304,12 +324,41 @@ async fn get_job(
 
 async fn sse_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(job_id): Path<String>,
-) -> axum::response::Sse<impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>> {
+) -> Response {
     let backend = state
         .backend::<AvatarAppBackend>()
         .expect("AvatarAppBackend");
-    let rx = backend.notifier.subscribe(&job_id).await;
+
+    // Validate bearer token
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    match token {
+        Some(t) if backend.notifier.validate_job_token(&job_id, t).await => {}
+        _ => {
+            return error_response(
+                StatusCode::UNAUTHORIZED,
+                "invalid or missing SSE bearer token".into(),
+                "auth_error",
+                "invalid_sse_token",
+            );
+        }
+    }
+
+    let rx = match backend.notifier.subscribe(&job_id).await {
+        Some(rx) => rx,
+        None => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SSE channel capacity reached".into(),
+                "resource_exhausted",
+                "sse_channel_cap",
+            );
+        }
+    };
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
         Ok(event) => {
             let data = serde_json::to_string(&event)
@@ -317,15 +366,17 @@ async fn sse_handler(
             let sse_event = axum::response::sse::Event::default()
                 .event(event.status.to_string())
                 .data(data);
-            Some(Ok(sse_event))
+            Some(Ok::<_, std::convert::Infallible>(sse_event))
         }
         Err(_) => None,
     });
-    axum::response::Sse::new(stream).keep_alive(
-        axum::response::sse::KeepAlive::new()
-            .interval(std::time::Duration::from_secs(15))
-            .text("ping"),
-    )
+    axum::response::Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(std::time::Duration::from_secs(15))
+                .text("ping"),
+        )
+        .into_response()
 }
 
 async fn health() -> Json<serde_json::Value> {
