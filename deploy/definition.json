@@ -1,0 +1,54 @@
+{
+  "metadata_uri": "ipfs://",
+  "manager": "0x0000000000000000000000000000000000000000",
+  "metadata": {
+    "name": "avatar-inference",
+    "description": "AI avatar generation and talking-head synthesis operator via Tangle",
+    "author": "Tangle Network",
+    "license": "MIT OR Apache-2.0",
+    "website": "https://tangle.tools",
+    "code_repository": "https://github.com/tangle-network/avatar-inference-blueprint",
+    "profiling_data": "{\"execution_profile\":{\"gpu\":{\"policy\":\"required\",\"min_count\":1,\"min_vram_gb\":16}}}"
+  },
+  "config": {
+    "membership": "Dynamic",
+    "min_operators": 1,
+    "max_operators": 0
+  },
+  "supported_memberships": ["Dynamic", "Fixed"],
+  "jobs": [
+    {
+      "name": "generate_avatar",
+      "params": ["(string,string,string,uint32,uint32)"],
+      "result": ["(bytes,string,uint32,uint32)"],
+      "verifier": "None"
+    }
+  ],
+  "sources": [
+    {
+      "kind": "Native",
+      "native": {
+        "fetcher": "Github",
+        "entrypoint": "./avatar-operator",
+        "github": {
+          "owner": "tangle-network",
+          "repo": "avatar-inference-blueprint",
+          "tag": "v0.1.0",
+          "binaries": [
+            {
+              "name": "avatar-operator",
+              "arch": "amd64",
+              "os": "linux",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          ]
+        }
+      },
+      "testing": {
+        "cargo_package": "avatar-inference",
+        "cargo_bin": "avatar-operator",
+        "base_path": "."
+      }
+    }
+  ]
+}
