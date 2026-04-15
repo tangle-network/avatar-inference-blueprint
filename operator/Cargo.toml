@@ -40,5 +40,8 @@ dotenvy = "0.15"
 tokio-stream = "0.1"
 futures-core = "0.3"
 
+[build-dependencies]
+serde_json = { workspace = true }
+
 [dev-dependencies]
 wiremock = "0.6"
