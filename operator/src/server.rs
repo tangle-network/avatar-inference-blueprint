@@ -310,6 +310,17 @@ async fn sse_handler(
         .backend::<AvatarAppBackend>()
         .expect("AvatarAppBackend");
     let rx = backend.notifier.subscribe(&job_id).await;
+    // Unwrap the Option — if no broadcast exists for this job, create an empty receiver.
+    // This matches the pre-API-change behavior where subscribe always returned a Receiver.
+    let rx = match rx {
+        Some(rx) => rx,
+        None => {
+            // Create a dummy broadcast channel and immediately return its receiver.
+            // The stream will be empty (no events) which is correct for a nonexistent job.
+            let (_, rx) = tokio::sync::broadcast::channel::<JobEvent>(1);
+            rx
+        }
+    };
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
         Ok(event) => {
             let data = serde_json::to_string(&event)
