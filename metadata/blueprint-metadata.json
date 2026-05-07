@@ -1,0 +1,215 @@
+{
+  "name": "Avatar Inference Blueprint",
+  "description": "Talking-head avatar generation on Tangle, producing lip-synced video from audio and face images with shielded billing.",
+  "author": "Tangle Network",
+  "category": "AI Inference",
+  "image": null,
+  "website": "https://tangle.tools",
+  "codeRepository": "https://github.com/tangle-network/avatar-inference-blueprint",
+  "docs": "https://github.com/tangle-network/avatar-inference-blueprint#readme",
+  "integrity": null,
+  "blueprintUi": {
+    "displayName": "Avatar Inference",
+    "description": "Submit avatar generation jobs, track async rendering status, and inspect backend, duration, and spend authorization health.",
+    "requestedSlug": "avatar-inference",
+    "publisher": {
+      "name": "Tangle Network",
+      "namespace": "tangle",
+      "verified": false
+    },
+    "resources": {
+      "serviceLabel": "Avatar service",
+      "itemLabel": "Avatar job",
+      "itemRoute": "runs"
+    },
+    "surfaces": [
+      "generic-overview",
+      "service-explorer",
+      "actions-panel",
+      "resources",
+      "metrics"
+    ],
+    "theme": {
+      "badgeLabel": "Talking-head generation",
+      "accentColor": "#F97316",
+      "secondaryColor": "#431407",
+      "icon": "bot"
+    },
+    "overviewCards": [
+      {
+        "id": "async-rendering",
+        "kind": "callout",
+        "title": "Async job model with SSE tracking",
+        "description": "Submit avatar generation and receive a job ID immediately. Track rendering progress via Server-Sent Events with webhook callbacks on completion or failure.",
+        "tone": "info"
+      },
+      {
+        "id": "backend-selector",
+        "kind": "checklist",
+        "title": "Pluggable backends",
+        "items": [
+          "HeyGen (Avatar IV, commercial quality)",
+          "D-ID (budget-friendly commercial)",
+          "Replicate (hosted open-source SadTalker)",
+          "ComfyUI (self-hosted MuseTalk nodes)"
+        ],
+        "tone": "success"
+      },
+      {
+        "id": "billing-model",
+        "kind": "stat",
+        "title": "Per-second billing via x402",
+        "description": "Wall-clock compute time tracked. Charges settle on job completion with SpendAuth validation.",
+        "value": "configurable",
+        "tone": "neutral"
+      }
+    ],
+    "actions": [
+      {
+        "id": "generate-avatar",
+        "label": "Generate avatar",
+        "description": "Submit an audio URL and face image (or preset avatar ID) for lip-synced video rendering. Duration capped by operator config.",
+        "target": "service",
+        "submitLabel": "Submit job",
+        "fields": [
+          {
+            "key": "audio_url",
+            "label": "Audio URL",
+            "input": "text",
+            "required": true,
+            "placeholder": "https://storage.example.com/narration.wav"
+          },
+          {
+            "key": "image_or_preset",
+            "label": "Face source",
+            "input": "select",
+            "required": true,
+            "options": [
+              {
+                "label": "Upload face image URL",
+                "value": "image_url"
+              },
+              {
+                "label": "Use preset avatar ID",
+                "value": "avatar_id"
+              }
+            ]
+          },
+          {
+            "key": "duration_seconds",
+            "label": "Duration (seconds)",
+            "input": "number",
+            "required": true,
+            "placeholder": "30"
+          }
+        ]
+      },
+      {
+        "id": "provision-avatar-service",
+        "label": "Provision avatar service",
+        "description": "Configure a new avatar operator with backend choice, GPU requirements, and pricing per compute second.",
+        "target": "service",
+        "submitLabel": "Provision",
+        "fields": [
+          {
+            "key": "backend",
+            "label": "Backend",
+            "input": "select",
+            "required": true,
+            "options": [
+              {
+                "label": "HeyGen",
+                "value": "heygen"
+              },
+              {
+                "label": "D-ID",
+                "value": "did"
+              },
+              {
+                "label": "Replicate",
+                "value": "replicate"
+              },
+              {
+                "label": "ComfyUI self-hosted",
+                "value": "comfyui"
+              }
+            ]
+          },
+          {
+            "key": "price_per_compute_second",
+            "label": "Price per compute second",
+            "input": "number",
+            "required": true,
+            "placeholder": "500000"
+          },
+          {
+            "key": "max_duration_seconds",
+            "label": "Max video duration",
+            "input": "number",
+            "required": true,
+            "placeholder": "300"
+          }
+        ]
+      }
+    ],
+    "resourceViews": [
+      {
+        "id": "avatar-jobs",
+        "title": "Avatar jobs",
+        "kind": "table",
+        "target": "resource",
+        "defaultSort": "updated_at:desc",
+        "columns": [
+          {
+            "key": "job_id",
+            "label": "Job",
+            "emphasis": true
+          },
+          {
+            "key": "backend",
+            "label": "Backend"
+          },
+          {
+            "key": "duration",
+            "label": "Duration"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          }
+        ]
+      }
+    ],
+    "modules": [
+      {
+        "module": "metrics-overview",
+        "slot": "overview",
+        "metricKeys": [
+          "render_seconds",
+          "queue_depth",
+          "requests_total"
+        ]
+      },
+      {
+        "module": "permissions-matrix",
+        "slot": "sidebar",
+        "eventKinds": [
+          "job_queued",
+          "job_processing",
+          "job_completed",
+          "job_failed"
+        ]
+      },
+      {
+        "module": "resource-events",
+        "slot": "resources",
+        "eventKinds": [
+          "avatar_requested",
+          "render_started",
+          "asset_ready",
+          "billing_settled"
+        ]
+      }
+    ]
+  }
+}
