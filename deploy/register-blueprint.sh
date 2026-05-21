@@ -70,21 +70,24 @@ if [ -z "${BSM_PROXY_ADDRESS:-}" ]; then
         --broadcast \
         --root "$CONTRACTS_DIR" \
         "$CONTRACTS_DIR/src/AvatarBSM.sol:AvatarBSM" \
-        --json | jq -r '.deployedTo')
+        2>&1 | grep -oE 'Deployed to: 0x[a-fA-F0-9]{40}' | tail -1 | awk '{print $3}')
     echo "AvatarBSM impl deployed at: $BSM_IMPL_ADDRESS"
 
     echo ""
     echo "Stage 2: deploying ERC1967Proxy (initialize(paymentToken=$PAYMENT_TOKEN)) …"
     # initialize(address) selector = 0xc4d66de8
     INIT_DATA=$(cast calldata "initialize(address)" "$PAYMENT_TOKEN")
+    # NOTE: forge create's first positional arg is a FILESYSTEM PATH, not a
+    # remapping — so we point at the soldeer-installed dependency on disk rather
+    # than the `@openzeppelin/contracts/...` import string.
     BSM_PROXY_ADDRESS=$(forge create \
         --rpc-url "$RPC_URL" \
         --private-key "$PRIVATE_KEY" \
         --broadcast \
         --root "$CONTRACTS_DIR" \
-        "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy" \
+        "$CONTRACTS_DIR/dependencies/@openzeppelin-contracts-5.1.0/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy" \
         --constructor-args "$BSM_IMPL_ADDRESS" "$INIT_DATA" \
-        --json | jq -r '.deployedTo')
+        2>&1 | grep -oE 'Deployed to: 0x[a-fA-F0-9]{40}' | tail -1 | awk '{print $3}')
     echo "AvatarBSM proxy deployed at: $BSM_PROXY_ADDRESS"
 else
     echo "Stages 1+2 skipped — reusing existing BSM proxy at $BSM_PROXY_ADDRESS"
