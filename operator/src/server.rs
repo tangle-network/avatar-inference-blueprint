@@ -9,12 +9,12 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use serde::Deserialize;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use dashmap::DashMap;
+use serde::Deserialize;
 use tokio::sync::watch;
 use tokio_stream::StreamExt;
 use tower_http::cors::CorsLayer;
@@ -29,7 +29,7 @@ use tangle_inference_core::server::{
 use tangle_inference_core::{AppState, CostModel, CostParams, PerSecondCostModel, RequestGuard};
 
 use blueprint_webhooks::notifier::{
-    JobEvent, JobNotifier, NotifierConfig, JobStatus as NotifierJobStatus,
+    JobEvent, JobNotifier, JobStatus as NotifierJobStatus, NotifierConfig,
 };
 
 use crate::avatar::{AvatarBackend, AvatarRequest, JobInfo, JobStatus};
@@ -92,7 +92,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/metrics", get(metrics_handler))
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(max_body))
-        .layer(TimeoutLayer::new(std::time::Duration::from_secs(timeout)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(timeout),
+        ))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }
@@ -101,10 +104,7 @@ pub async fn start(
     state: AppState,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
-    let bind = format!(
-        "{}:{}",
-        state.server_config.host, state.server_config.port
-    );
+    let bind = format!("{}:{}", state.server_config.host, state.server_config.port);
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     tracing::info!(bind = %bind, "Avatar HTTP server listening");
@@ -158,11 +158,10 @@ async fn generate(
     // Conservative: avatar generation typically takes ~10x the output duration.
     let estimated_compute_secs = duration * 10;
     let estimated_cost = estimated_compute_secs * backend.avatar.price_per_compute_second();
-    let (spend_auth, preauth) =
-        match billing_gate(&state, &headers, None, estimated_cost).await {
-            Ok(v) => v,
-            Err(resp) => return resp,
-        };
+    let (spend_auth, preauth) = match billing_gate(&state, &headers, None, estimated_cost).await {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
 
     let mut guard = RequestGuard::new("avatar");
 
@@ -240,15 +239,14 @@ async fn generate(
                     };
                     let event = JobEvent {
                         status: notifier_status,
-                        result: info.result.as_ref().map(|r| {
-                            serde_json::to_value(r).unwrap_or_default()
-                        }),
+                        result: info
+                            .result
+                            .as_ref()
+                            .map(|r| serde_json::to_value(r).unwrap_or_default()),
                         error: info.error.clone(),
                         ..Default::default()
                     };
-                    let _ = notifier
-                        .notify(&jid, event, webhook_url.as_deref())
-                        .await;
+                    let _ = notifier.notify(&jid, event, webhook_url.as_deref()).await;
 
                     if done {
                         // Settle billing based on actual GPU compute time (wall-clock)
@@ -283,10 +281,7 @@ async fn generate(
     (StatusCode::ACCEPTED, Json(info)).into_response()
 }
 
-async fn get_job(
-    State(state): State<AppState>,
-    Path(job_id): Path<String>,
-) -> Response {
+async fn get_job(State(state): State<AppState>, Path(job_id): Path<String>) -> Response {
     let backend = state
         .backend::<AvatarAppBackend>()
         .expect("AvatarAppBackend");
@@ -305,7 +300,9 @@ async fn get_job(
 async fn sse_handler(
     State(state): State<AppState>,
     Path(job_id): Path<String>,
-) -> axum::response::Sse<impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>> {
+) -> axum::response::Sse<
+    impl futures_core::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
     let backend = state
         .backend::<AvatarAppBackend>()
         .expect("AvatarAppBackend");
@@ -321,17 +318,18 @@ async fn sse_handler(
             rx
         }
     };
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
-        Ok(event) => {
-            let data = serde_json::to_string(&event)
-                .unwrap_or_else(|_| r#"{"error":"serialize"}"#.to_string());
-            let sse_event = axum::response::sse::Event::default()
-                .event(event.status.to_string())
-                .data(data);
-            Some(Ok(sse_event))
-        }
-        Err(_) => None,
-    });
+    let stream =
+        tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
+            Ok(event) => {
+                let data = serde_json::to_string(&event)
+                    .unwrap_or_else(|_| r#"{"error":"serialize"}"#.to_string());
+                let sse_event = axum::response::sse::Event::default()
+                    .event(event.status.to_string())
+                    .data(data);
+                Some(Ok(sse_event))
+            }
+            Err(_) => None,
+        });
     axum::response::Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
             .interval(std::time::Duration::from_secs(15))

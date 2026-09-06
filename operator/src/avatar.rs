@@ -189,10 +189,7 @@ impl AvatarBackend {
                 job_id: job_id.to_string(),
                 status: JobStatus::Completed,
                 result: Some(AvatarResult {
-                    video_url: data["video_url"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string(),
+                    video_url: data["video_url"].as_str().unwrap_or_default().to_string(),
                     duration_seconds: data["duration"].as_f64().unwrap_or(0.0),
                     format: "mp4".to_string(),
                 }),
@@ -289,10 +286,7 @@ impl AvatarBackend {
                 job_id: job_id.to_string(),
                 status: JobStatus::Completed,
                 result: Some(AvatarResult {
-                    video_url: json["result_url"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_string(),
+                    video_url: json["result_url"].as_str().unwrap_or_default().to_string(),
                     duration_seconds: json["duration"].as_f64().unwrap_or(0.0),
                     format: "mp4".to_string(),
                 }),
@@ -302,9 +296,7 @@ impl AvatarBackend {
                 job_id: job_id.to_string(),
                 status: JobStatus::Failed,
                 result: None,
-                error: json["error"]["description"]
-                    .as_str()
-                    .map(|s| s.to_string()),
+                error: json["error"]["description"].as_str().map(|s| s.to_string()),
             },
             _ => JobInfo {
                 job_id: job_id.to_string(),
@@ -367,9 +359,7 @@ impl AvatarBackend {
 
         let resp = self
             .http
-            .get(format!(
-                "https://api.replicate.com/v1/predictions/{job_id}"
-            ))
+            .get(format!("https://api.replicate.com/v1/predictions/{job_id}"))
             .bearer_auth(token)
             .send()
             .await?;

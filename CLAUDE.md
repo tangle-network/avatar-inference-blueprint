@@ -1,26 +1,13 @@
-# CLAUDE.md
+# Avatar Inference Blueprint
 
-## Project Overview
+Operators generate avatar video from audio and an image.
+Read [README.md](README.md) for setup and [operator/Cargo.toml](operator/Cargo.toml) for supported dependencies.
 
-Avatar Inference Blueprint for Tangle Network. Operators serve talking-head avatar generation (lip-synced video from audio + face image). Supports multiple backends: HeyGen (commercial), D-ID (commercial), Replicate (hosted open-source), ComfyUI (self-hosted SadTalker/MuseTalk).
+For provider changes, inspect [avatar.rs](operator/src/avatar.rs) and [config.rs](operator/src/config.rs).
+For the asynchronous submission and polling contract, inspect [server.rs](operator/src/server.rs).
+Keep common payment validation, health, and metrics in `tangle-inference-core`.
 
-## Architecture
-
-Depends on [`tangle-inference-core`](../tangle-inference-core/) for shared billing, metrics, health, nonce store, x402 payment.
-
-- **contracts/src/AvatarBSM.sol** — validates operator registration, per-second pricing, GPU validation for self-hosted backends
-- **operator/src/avatar.rs** — unified `AvatarBackend` that dispatches to HeyGen/D-ID/Replicate/ComfyUI based on config
-- **operator/src/server.rs** — async job model (POST → 202 Accepted + job_id, GET → poll)
-- **operator/src/config.rs** — imports shared config from core, adds `AvatarConfig` (backend selection, pricing, API keys)
-- **operator/src/lib.rs** — `AvatarInferenceServer` BackgroundService, on-chain job handler
-
-## Build
-
-```bash
-cd contracts && forge build && forge test
-cargo build -p avatar-inference
-```
-
-## Billing
-
-Per-second pricing via `PerSecondCostModel`. Billing gate validates x402 SpendAuth upfront based on requested duration. Settlement adjusts to actual duration after generation completes.
+Billing estimates compute time before generation and settles after completion.
+Check the server's cost calculation and shared settlement behavior before changing pricing; output duration is not compute duration.
+Verify submission, polling, failure, and settlement through the actual server, replacing only unavailable external providers.
+Exercise registration and pricing changes against [AvatarBSM.sol](contracts/src/AvatarBSM.sol) with contract tests.
