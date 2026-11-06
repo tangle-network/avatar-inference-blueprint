@@ -252,13 +252,13 @@ async fn generate(
                         // Settle billing based on actual GPU compute time (wall-clock)
                         let compute_secs = start_time.elapsed().as_secs();
                         if let Some(ref auth) = spend_auth {
-                            let cost = cost_model.calculate_cost(&CostParams {
+                            let cost = Some(cost_model.calculate_cost(&CostParams {
                                 extra: std::collections::HashMap::from([(
                                     "centiseconds".into(),
                                     compute_secs * 100,
                                 )]),
                                 ..Default::default()
-                            });
+                            }));
                             if let Err(e) =
                                 settle_billing(&billing, auth, preauth.unwrap_or(0), cost).await
                             {
