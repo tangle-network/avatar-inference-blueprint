@@ -21,6 +21,7 @@ contract AvatarBSMTest is Test {
 
         // Deploy behind UUPS proxy
         bytes memory initData = abi.encodeCall(AvatarBSM.initialize, (paymentToken, tangle));
+        vm.prank(owner);
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         bsm = AvatarBSM(payable(address(proxy)));
 
@@ -265,12 +266,14 @@ contract AvatarBSMTest is Test {
     // Real implementation, atomically initialized proxy, registry and owner calls.
     function test_registryBoundProxyLifecycleAndAuthorizedUpgrade() public {
         AvatarBSM implementation = new AvatarBSM();
+        vm.prank(owner);
         AvatarBSM fresh = AvatarBSM(payable(address(new ERC1967Proxy(
             address(implementation), abi.encodeCall(AvatarBSM.initialize, (paymentToken, tangle))
         ))));
         AvatarBSM replacement = new AvatarBSM();
         assertEq(fresh.tangleCore(), tangle);
-        assertEq(fresh.blueprintOwner(), address(0));
+        assertEq(fresh.blueprintOwner(), owner);
+        assertEq(fresh.blueprintId(), type(uint64).max);
 
         vm.prank(rando);
         vm.expectRevert();

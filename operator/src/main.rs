@@ -15,7 +15,7 @@ fn registration_payload(config: &OperatorConfig) -> Vec<u8> {
 tangle_inference_core::run_operator!(
     OperatorConfig::load(None),
     registration_payload,
-    avatar_inference::router(),
+    |_| avatar_inference::router(),
     |config: std::sync::Arc<OperatorConfig>| AvatarInferenceServer::new((*config).clone()),
     no_qos
 );
