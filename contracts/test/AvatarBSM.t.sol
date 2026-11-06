@@ -262,4 +262,56 @@ contract AvatarBSMTest is Test {
             assertTrue(bsm.isOperatorActive(operator1));
         }
     }
+    // Real implementation, atomically initialized proxy, registry and owner calls.
+    function test_registryBoundProxyLifecycleAndAuthorizedUpgrade() public {
+        AvatarBSM implementation = new AvatarBSM();
+        AvatarBSM fresh = AvatarBSM(payable(address(new ERC1967Proxy(
+            address(implementation), abi.encodeCall(AvatarBSM.initialize, (paymentToken, tangle))
+        ))));
+        AvatarBSM replacement = new AvatarBSM();
+        assertEq(fresh.tangleCore(), tangle);
+        assertEq(fresh.blueprintOwner(), address(0));
+
+        vm.prank(rando);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(99, rando, rando);
+        vm.prank(rando);
+        vm.expectRevert();
+        fresh.upgradeToAndCall(address(replacement), "");
+        vm.prank(tangle);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(7, owner, rando);
+        vm.prank(tangle);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(7, address(0), tangle);
+
+        vm.prank(tangle);
+        fresh.onBlueprintCreated(7, owner, tangle);
+        vm.prank(tangle);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(8, rando, tangle);
+        vm.prank(owner);
+        fresh.configureAvatar(1234, 120, 8192);
+        vm.prank(rando);
+        vm.expectRevert();
+        fresh.upgradeToAndCall(address(replacement), "");
+        vm.prank(owner);
+        fresh.upgradeToAndCall(address(replacement), "");
+        assertEq(fresh.blueprintId(), 7);
+        assertEq(fresh.blueprintOwner(), owner);
+        assertEq(fresh.tangleCore(), tangle);
+        assertEq(fresh.paymentToken(), paymentToken);
+        (uint64 price, uint32 duration, uint32 vram, bool enabled) = fresh.avatarConfig();
+        assertEq(price, 1234);
+        assertEq(duration, 120);
+        assertEq(vram, 8192);
+        assertTrue(enabled);
+
+        vm.expectRevert();
+        fresh.initialize(address(0xdead), rando);
+        vm.expectRevert();
+        implementation.initialize(paymentToken, tangle);
+        vm.expectRevert();
+        replacement.initialize(paymentToken, tangle);
+    }
 }
