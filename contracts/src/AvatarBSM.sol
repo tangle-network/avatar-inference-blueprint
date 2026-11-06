@@ -4,14 +4,14 @@ pragma solidity ^0.8.26;
 import { EnumerableSet } from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { InferenceBSMBase } from "tangle-inference-core/InferenceBSMBase.sol";
+import { BlueprintServiceManagerBase } from "tnt-core/BlueprintServiceManagerBase.sol";
 
 /// @title AvatarBSM — Blueprint Service Manager for talking-head avatar generation.
 /// @notice Manages operator registration with GPU validation, per-second pricing,
 ///         and duration limits. Supports multiple avatar backends (HeyGen, D-ID,
 ///         ComfyUI self-hosted) — the backend choice is operator-level config,
 ///         not on-chain.
-contract AvatarBSM is Initializable, UUPSUpgradeable, InferenceBSMBase {
+contract AvatarBSM is Initializable, UUPSUpgradeable, BlueprintServiceManagerBase {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     // ── Errors ──────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ contract AvatarBSM is Initializable, UUPSUpgradeable, InferenceBSMBase {
     constructor() { _disableInitializers(); }
 
     function initialize(address _paymentToken, address registry) external initializer {
-        _bindRegistrationCore(registry);
+        _initializeBlueprintManager(registry, msg.sender);
         __UUPSUpgradeable_init();
         paymentToken = _paymentToken;
         avatarConfig = AvatarModelConfig({
