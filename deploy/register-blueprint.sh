@@ -1,45 +1,6 @@
 #!/usr/bin/env bash
 # Register the avatar-inference blueprint on Tangle.
-#
-# Single-shot flow: deploys AvatarBSM (impl + UUPS proxy + initialize)
-# AND calls Tangle.createBlueprint in the same broadcast via
-# `contracts/script/Deploy.s.sol`. This replaces the prior
-# cargo-tangle CLI invocation, matching the pattern shipping across the
-# other Tangle blueprint repos.
-#
-# AvatarBSM is a UUPS-upgradeable contract (extends Initializable +
-# UUPSUpgradeable + BlueprintServiceManagerBase), so its `manager` address
-# must be the proxy, not the implementation. The constructor is empty (no
-# args); the payment token is wired via initialize(address) on the proxy.
-#
-# Prerequisites:
-#   - forge (Foundry) installed
-#   - Deployer wallet funded on the target network
-#
-# Usage (Base Sepolia, against the already-deployed Tangle protocol):
-#
-#   export PRIVATE_KEY=0x...
-#   export RPC_URL=https://sepolia.base.org
-#   export TANGLE_CORE=0xC9b0716a187072be0f38A5D972392C6479b9Cfe3
-#   export PAYMENT_TOKEN=0x036CbD53842c5426634e7929541eC2318f3dCF7e  # USDC sepolia
-#   ./deploy/register-blueprint.sh
-#
-# Local anvil (LocalTestnet snapshot):
-#
-#   export RPC_URL=http://127.0.0.1:8545
-#   ./deploy/register-blueprint.sh   # uses anvil deployer key + Tangle/USDC defaults
-#
-# Optional overrides (operator-side registration only — they get echoed into
-# the abi-encoded registration inputs the operator uses later):
-#   BACKEND          Avatar backend (default: comfyui)
-#   GPU_COUNT        GPUs the operator exposes (default: 1)
-#   TOTAL_VRAM       Total VRAM in MiB (default: 24000)
-#   ENDPOINT         Operator HTTP endpoint (default: https://your-operator.example.com)
-#
-# Outputs (parsed by deployment scripts, do not change without coordinating):
-#   DEPLOY_AVATAR_BSM_IMPL=<address>
-#   DEPLOY_AVATAR_BSM_PROXY=<address>
-#   DEPLOY_AVATAR_BLUEPRINT_ID=<u64>
+# Release definitions and local Anvil inputs are documented in README.md.
 
 set -euo pipefail
 
@@ -54,7 +15,7 @@ ENDPOINT="${ENDPOINT:-https://your-operator.example.com}"
 
 echo "=== Avatar-Inference Blueprint Registration ==="
 echo "Network:     $(cast chain-id --rpc-url "$RPC_URL")"
-echo "Tangle Core: ${TANGLE_CORE:-<default from RegisterBlueprint.s.sol>}"
+echo "Tangle Core: $TANGLE_CORE"
 echo "Payment:     ${PAYMENT_TOKEN:-<default USDC sepolia>}"
 echo "Backend:     $BACKEND"
 echo "GPUs:        $GPU_COUNT (${TOTAL_VRAM} MiB)"
@@ -63,6 +24,9 @@ echo ""
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CORE_DIR="$(cargo metadata --manifest-path "$ROOT_DIR/Cargo.toml" --format-version 1 --locked | python3 -c 'import json,sys,pathlib; print(pathlib.Path(next(p["manifest_path"] for p in json.load(sys.stdin)["packages"] if p["name"] == "tangle-inference-core")).parent)')"
+BLUEPRINT_DEFINITION="$(node "$CORE_DIR/scripts/register-blueprint.mjs" "$ROOT_DIR/deploy/definition.json" "$ROOT_DIR")"
+export BLUEPRINT_DEFINITION
+trap 'rm -f -- "$BLUEPRINT_DEFINITION"' EXIT
 cd "$(dirname "$0")/../contracts"
 
 # Deploy BSM (impl + proxy + initialize) AND register the blueprint in one
