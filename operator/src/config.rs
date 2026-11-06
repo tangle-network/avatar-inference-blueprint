@@ -56,7 +56,11 @@ impl OperatorConfig {
             builder.add_source(config::File::with_name("config").required(false))
         };
         let config = builder
-            .add_source(config::Environment::with_prefix("AVATAR_OP").separator("__"))
+            .add_source(
+                config::Environment::with_prefix("AVATAR_OP")
+                    .prefix_separator("_")
+                    .separator("__"),
+            )
             .build()?;
         Ok(config.try_deserialize()?)
     }
