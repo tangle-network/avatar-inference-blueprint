@@ -45,7 +45,7 @@ pub fn router() -> Router {
 #[debug_job]
 pub async fn run_avatar(
     TangleArg(request): TangleArg<AvatarJobRequest>,
-) -> Result<TangleResult<AvatarJobResult>, RunnerError> {
+) -> anyhow::Result<TangleResult<AvatarJobResult>> {
     tracing::info!(
         audio = %request.audioUrl,
         image = %request.imageUrl,
