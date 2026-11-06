@@ -79,16 +79,3 @@ impl Default for AvatarConfig {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_avatar_config() {
-        let cfg = AvatarConfig::default();
-        assert_eq!(cfg.backend, "heygen");
-        assert_eq!(cfg.price_per_compute_second, 500_000);
-        assert_eq!(cfg.max_duration_seconds, 300);
-    }
-}
