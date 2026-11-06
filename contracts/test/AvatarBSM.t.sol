@@ -2,8 +2,8 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { BlueprintServiceManagerBase } from "tnt-core/BlueprintServiceManagerBase.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {BlueprintServiceManagerBase} from "tnt-core/BlueprintServiceManagerBase.sol";
 import "../src/AvatarBSM.sol";
 
 contract AvatarBSMTest is Test {
@@ -20,11 +20,12 @@ contract AvatarBSMTest is Test {
         AvatarBSM impl = new AvatarBSM();
 
         // Deploy behind UUPS proxy
-        bytes memory initData = abi.encodeCall(AvatarBSM.initialize, (paymentToken));
+        bytes memory initData = abi.encodeCall(AvatarBSM.initialize, (paymentToken, tangle));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         bsm = AvatarBSM(payable(address(proxy)));
 
         // Wire up the BSM base (tangle core + owner)
+        vm.prank(tangle);
         bsm.onBlueprintCreated(1, owner, tangle);
     }
 
@@ -44,7 +45,7 @@ contract AvatarBSMTest is Test {
 
     function test_initialize_cannotReinitialize() public {
         vm.expectRevert();
-        bsm.initialize(address(0xdead));
+        bsm.initialize(address(0xdead), tangle);
     }
 
     // ── Avatar Configuration ───────────────────────────────────────────
@@ -157,9 +158,7 @@ contract AvatarBSMTest is Test {
         bytes memory inputs = abi.encode("heygen", uint32(1), uint32(8192), "https://op1.example.com");
 
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle));
         bsm.onRegister(operator1, inputs);
     }
 
@@ -187,9 +186,7 @@ contract AvatarBSMTest is Test {
 
     function test_onUnregister_revert_notTangle() public {
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle));
         bsm.onUnregister(operator1);
     }
 
@@ -206,9 +203,7 @@ contract AvatarBSMTest is Test {
     function test_onRequest_revert_notTangle() public {
         address[] memory ops = new address[](0);
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle));
         bsm.onRequest(0, address(0), ops, "", 0, address(0), 0);
     }
 
@@ -259,9 +254,7 @@ contract AvatarBSMTest is Test {
 
         if (actualVram < minVram) {
             vm.prank(tangle);
-            vm.expectRevert(
-                abi.encodeWithSelector(AvatarBSM.InsufficientGpuCapability.selector, minVram, actualVram)
-            );
+            vm.expectRevert(abi.encodeWithSelector(AvatarBSM.InsufficientGpuCapability.selector, minVram, actualVram));
             bsm.onRegister(operator1, inputs);
         } else {
             vm.prank(tangle);

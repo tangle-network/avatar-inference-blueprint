@@ -10,7 +10,10 @@ contract Deploy is RegisterBlueprint {
         AvatarBSM impl = new AvatarBSM();
         console2.log("DEPLOY_AVATAR_BSM_IMPL=%s", vm.toString(address(impl)));
         return address(
-            new ERC1967Proxy(address(impl), abi.encodeCall(AvatarBSM.initialize, (vm.envAddress("PAYMENT_TOKEN"))))
+            new ERC1967Proxy(
+                address(impl),
+                abi.encodeCall(AvatarBSM.initialize, (vm.envAddress("PAYMENT_TOKEN"), vm.envAddress("TANGLE_CORE")))
+            )
         );
     }
 
