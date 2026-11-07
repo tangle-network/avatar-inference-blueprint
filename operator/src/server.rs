@@ -213,8 +213,8 @@ async fn generate(
         )
         .await;
 
-    // Poll in the background and settle on completion; a failed job releases its payment.
-    // Track wall-clock compute time for accurate billing.
+    // Poll for up to an hour (720 x 5 s) and settle on completion; a failed or unfinished job
+    // drops its payment, releasing the credit. Bill wall-clock compute time.
     let avatar = backend.avatar.clone();
     let cost_model = backend.cost_model.clone();
     let jobs = backend.jobs.clone();
@@ -222,7 +222,7 @@ async fn generate(
     state.spawn_settlement(async move {
         let start_time = std::time::Instant::now();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-        loop {
+        for _ in 0..720 {
             interval.tick().await;
             match avatar.poll(&jid).await {
                 Ok(info) => {
