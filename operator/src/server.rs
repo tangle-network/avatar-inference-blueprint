@@ -23,8 +23,8 @@ use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 use tangle_inference_core::server::{
-    acquire_permit, billing_gate, error_response, gpu_health_handler, metrics_handler,
-    settle_billing,
+    acquire_permit, authorize_request, error_response, gpu_health_handler, metrics_handler,
+    payment_required, resolve_payment_proof, settle_request,
 };
 use tangle_inference_core::{AppState, CostModel, CostParams, PerSecondCostModel, RequestGuard};
 
@@ -148,7 +148,6 @@ async fn generate(
         );
     }
 
-    // Concurrency gate
     let _permit = match acquire_permit(&state) {
         Ok(p) => p,
         Err(resp) => return resp,
@@ -158,9 +157,17 @@ async fn generate(
     // Conservative: avatar generation typically takes ~10x the output duration.
     let estimated_compute_secs = duration * 10;
     let estimated_cost = estimated_compute_secs * backend.avatar.price_per_compute_second();
-    let (spend_auth, preauth) = match billing_gate(&state, &headers, None, estimated_cost).await {
-        Ok(v) => v,
-        Err(resp) => return resp,
+    let (b, ready) = (&state.billing_config, std::future::ready(true));
+    let payment = match resolve_payment_proof(&headers, None, None) {
+        Some(proof) => match authorize_request(&state, proof, estimated_cost, ready).await {
+            Ok(payment) => Some(payment),
+            Err(resp) => return resp,
+        },
+        None if b.billing_required => {
+            let floor = estimated_cost.max(b.min_charge_amount);
+            return payment_required(b, &state.tangle_config, state.operator_address, floor);
+        }
+        None => None,
     };
 
     let mut guard = RequestGuard::new("avatar");
@@ -206,14 +213,13 @@ async fn generate(
         )
         .await;
 
-    // Spawn background poller that settles billing on completion.
+    // Poll in the background and settle on completion; a failed job releases its payment.
     // Track wall-clock compute time for accurate billing.
     let avatar = backend.avatar.clone();
     let cost_model = backend.cost_model.clone();
     let jobs = backend.jobs.clone();
-    let billing = state.billing.clone();
-    let jid = job_id.clone();
-    tokio::spawn(async move {
+    let (jid, settling) = (job_id.clone(), state.clone());
+    state.spawn_settlement(async move {
         let start_time = std::time::Instant::now();
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
         loop {
@@ -251,7 +257,7 @@ async fn generate(
                     if done {
                         // Settle billing based on actual GPU compute time (wall-clock)
                         let compute_secs = start_time.elapsed().as_secs();
-                        if let Some(ref auth) = spend_auth {
+                        if let (JobStatus::Completed, Some(auth)) = (&info.status, &payment) {
                             let cost = Some(cost_model.calculate_cost(&CostParams {
                                 extra: std::collections::HashMap::from([(
                                     "centiseconds".into(),
@@ -259,11 +265,7 @@ async fn generate(
                                 )]),
                                 ..Default::default()
                             }));
-                            if let Err(e) =
-                                settle_billing(&billing, auth, preauth.unwrap_or(0), cost).await
-                            {
-                                tracing::error!(error = %e, "settlement failed");
-                            }
+                            settle_request(&settling, auth, cost).await;
                         }
                         break;
                     }
@@ -306,18 +308,9 @@ async fn sse_handler(
     let backend = state
         .backend::<AvatarAppBackend>()
         .expect("AvatarAppBackend");
+    // A job without a broadcast streams no events.
     let rx = backend.notifier.subscribe(&job_id).await;
-    // Unwrap the Option — if no broadcast exists for this job, create an empty receiver.
-    // This matches the pre-API-change behavior where subscribe always returned a Receiver.
-    let rx = match rx {
-        Some(rx) => rx,
-        None => {
-            // Create a dummy broadcast channel and immediately return its receiver.
-            // The stream will be empty (no events) which is correct for a nonexistent job.
-            let (_, rx) = tokio::sync::broadcast::channel::<JobEvent>(1);
-            rx
-        }
-    };
+    let rx = rx.unwrap_or_else(|| tokio::sync::broadcast::channel::<JobEvent>(1).1);
     let stream =
         tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
             Ok(event) => {
