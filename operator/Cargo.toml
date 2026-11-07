@@ -3,6 +3,7 @@ name = "avatar-inference"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [lib]
 name = "avatar_inference"
@@ -28,7 +29,7 @@ hex = { workspace = true }
 k256 = { workspace = true }
 prometheus = { workspace = true }
 
-tangle-inference-core = { git = "https://github.com/tangle-network/tangle-inference-core", rev = "c7e11063a2ba30c662c64356a73bd81d4a03a267", default-features = false, features = ["billing", "http", "metrics"] }
+tangle-inference-core = { git = "https://github.com/tangle-network/tangle-inference-core", rev = "55fa3b0d55bcf1544a0c6fc3f6487e0557dfc906", default-features = false, features = ["billing", "http", "metrics"] }
 
 axum = { version = "0.7", features = ["json", "macros"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "trace", "timeout"] }

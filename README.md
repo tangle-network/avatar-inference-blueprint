@@ -59,3 +59,18 @@ export AVATAR_OP__AVATAR__HEYGEN_API_KEY=your_key_here
 ## License
 
 MIT
+
+## Register a blueprint
+
+Deploy the manager with [Deploy.s.sol](contracts/script/Deploy.s.sol), `TANGLE_CORE` and `PAYMENT_TOKEN`
+and a Foundry keystore. Set its returned manager address in
+[definition.json](deploy/definition.json), then follow the
+[cargo-tangle deployment guide](https://github.com/tangle-network/blueprint#deploying-to-testnetmainnet)
+using the same wallet address in the SDK keystore. Use verified native artifact
+metadata from [Release](.github/workflows/release.yml). The CLI owns registration
+encoding and metadata hashing; `cargo tangle blueprint deploy tangle --help`
+lists its settings, RPC and artifact options.
+
+## Releases
+
+[Release](.github/workflows/release.yml) runs cargo-dist using [dist-workspace.toml](dist-workspace.toml). Download the native archive and verify its published checksum; `dist-manifest.json` identifies its executables and target platform.

@@ -49,7 +49,10 @@ contract AvatarBSM is Initializable, UUPSUpgradeable, BlueprintServiceManagerBas
 
     // ── Initialization ──────────────────────────────────────────────────
 
-    function initialize(address _paymentToken) external initializer {
+    constructor() { _disableInitializers(); }
+
+    function initialize(address _paymentToken, address registry) external initializer {
+        _initializeBlueprintManager(registry, msg.sender);
         __UUPSUpgradeable_init();
         paymentToken = _paymentToken;
         avatarConfig = AvatarModelConfig({
@@ -60,7 +63,7 @@ contract AvatarBSM is Initializable, UUPSUpgradeable, BlueprintServiceManagerBas
         });
     }
 
-    function _authorizeUpgrade(address) internal override {}
+    function _authorizeUpgrade(address) internal override onlyBlueprintOwner {}
 
     // ── Admin ───────────────────────────────────────────────────────────
 

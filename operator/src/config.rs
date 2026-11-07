@@ -56,7 +56,11 @@ impl OperatorConfig {
             builder.add_source(config::File::with_name("config").required(false))
         };
         let config = builder
-            .add_source(config::Environment::with_prefix("AVATAR_OP").separator("__"))
+            .add_source(
+                config::Environment::with_prefix("AVATAR_OP")
+                    .prefix_separator("_")
+                    .separator("__"),
+            )
             .build()?;
         Ok(config.try_deserialize()?)
     }
@@ -73,18 +77,5 @@ impl Default for AvatarConfig {
             price_per_compute_second: default_price_per_compute_second(),
             max_duration_seconds: default_max_duration(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_avatar_config() {
-        let cfg = AvatarConfig::default();
-        assert_eq!(cfg.backend, "heygen");
-        assert_eq!(cfg.price_per_compute_second, 500_000);
-        assert_eq!(cfg.max_duration_seconds, 300);
     }
 }

@@ -2,8 +2,8 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { BlueprintServiceManagerBase } from "tnt-core/BlueprintServiceManagerBase.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {BlueprintServiceManagerBase} from "tnt-core/BlueprintServiceManagerBase.sol";
 import "../src/AvatarBSM.sol";
 
 contract AvatarBSMTest is Test {
@@ -20,11 +20,13 @@ contract AvatarBSMTest is Test {
         AvatarBSM impl = new AvatarBSM();
 
         // Deploy behind UUPS proxy
-        bytes memory initData = abi.encodeCall(AvatarBSM.initialize, (paymentToken));
+        bytes memory initData = abi.encodeCall(AvatarBSM.initialize, (paymentToken, tangle));
+        vm.prank(owner);
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         bsm = AvatarBSM(payable(address(proxy)));
 
         // Wire up the BSM base (tangle core + owner)
+        vm.prank(tangle);
         bsm.onBlueprintCreated(1, owner, tangle);
     }
 
@@ -44,7 +46,7 @@ contract AvatarBSMTest is Test {
 
     function test_initialize_cannotReinitialize() public {
         vm.expectRevert();
-        bsm.initialize(address(0xdead));
+        bsm.initialize(address(0xdead), tangle);
     }
 
     // ── Avatar Configuration ───────────────────────────────────────────
@@ -157,9 +159,7 @@ contract AvatarBSMTest is Test {
         bytes memory inputs = abi.encode("heygen", uint32(1), uint32(8192), "https://op1.example.com");
 
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle));
         bsm.onRegister(operator1, inputs);
     }
 
@@ -187,9 +187,7 @@ contract AvatarBSMTest is Test {
 
     function test_onUnregister_revert_notTangle() public {
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle));
         bsm.onUnregister(operator1);
     }
 
@@ -206,9 +204,7 @@ contract AvatarBSMTest is Test {
     function test_onRequest_revert_notTangle() public {
         address[] memory ops = new address[](0);
         vm.prank(rando);
-        vm.expectRevert(
-            abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle)
-        );
+        vm.expectRevert(abi.encodeWithSelector(BlueprintServiceManagerBase.OnlyTangleAllowed.selector, rando, tangle));
         bsm.onRequest(0, address(0), ops, "", 0, address(0), 0);
     }
 
@@ -259,14 +255,66 @@ contract AvatarBSMTest is Test {
 
         if (actualVram < minVram) {
             vm.prank(tangle);
-            vm.expectRevert(
-                abi.encodeWithSelector(AvatarBSM.InsufficientGpuCapability.selector, minVram, actualVram)
-            );
+            vm.expectRevert(abi.encodeWithSelector(AvatarBSM.InsufficientGpuCapability.selector, minVram, actualVram));
             bsm.onRegister(operator1, inputs);
         } else {
             vm.prank(tangle);
             bsm.onRegister(operator1, inputs);
             assertTrue(bsm.isOperatorActive(operator1));
         }
+    }
+    // Real implementation, atomically initialized proxy, registry and owner calls.
+    function test_registryBoundProxyLifecycleAndAuthorizedUpgrade() public {
+        AvatarBSM implementation = new AvatarBSM();
+        vm.prank(owner);
+        AvatarBSM fresh = AvatarBSM(payable(address(new ERC1967Proxy(
+            address(implementation), abi.encodeCall(AvatarBSM.initialize, (paymentToken, tangle))
+        ))));
+        AvatarBSM replacement = new AvatarBSM();
+        assertEq(fresh.tangleCore(), tangle);
+        assertEq(fresh.blueprintOwner(), owner);
+        assertEq(fresh.blueprintId(), type(uint64).max);
+
+        vm.prank(rando);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(99, rando, rando);
+        vm.prank(rando);
+        vm.expectRevert();
+        fresh.upgradeToAndCall(address(replacement), "");
+        vm.prank(tangle);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(7, owner, rando);
+        vm.prank(tangle);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(7, address(0), tangle);
+
+        vm.prank(tangle);
+        fresh.onBlueprintCreated(7, owner, tangle);
+        vm.prank(tangle);
+        vm.expectRevert();
+        fresh.onBlueprintCreated(8, rando, tangle);
+        vm.prank(owner);
+        fresh.configureAvatar(1234, 120, 8192);
+        vm.prank(rando);
+        vm.expectRevert();
+        fresh.upgradeToAndCall(address(replacement), "");
+        vm.prank(owner);
+        fresh.upgradeToAndCall(address(replacement), "");
+        assertEq(fresh.blueprintId(), 7);
+        assertEq(fresh.blueprintOwner(), owner);
+        assertEq(fresh.tangleCore(), tangle);
+        assertEq(fresh.paymentToken(), paymentToken);
+        (uint64 price, uint32 duration, uint32 vram, bool enabled) = fresh.avatarConfig();
+        assertEq(price, 1234);
+        assertEq(duration, 120);
+        assertEq(vram, 8192);
+        assertTrue(enabled);
+
+        vm.expectRevert();
+        fresh.initialize(address(0xdead), rando);
+        vm.expectRevert();
+        implementation.initialize(paymentToken, tangle);
+        vm.expectRevert();
+        replacement.initialize(paymentToken, tangle);
     }
 }
