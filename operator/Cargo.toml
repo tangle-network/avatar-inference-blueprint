@@ -29,7 +29,7 @@ hex = { workspace = true }
 k256 = { workspace = true }
 prometheus = { workspace = true }
 
-tangle-inference-core = { git = "https://github.com/tangle-network/tangle-inference-core", rev = "55fa3b0d55bcf1544a0c6fc3f6487e0557dfc906", default-features = false, features = ["billing", "http", "metrics"] }
+tangle-inference-core = { git = "https://github.com/tangle-network/tangle-inference-core", rev = "aacaec4387122293ac5f9e3d9477380ee7afd94f", default-features = false, features = ["billing", "http", "metrics"] }
 
 axum = { version = "0.7", features = ["json", "macros"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "trace", "timeout"] }
