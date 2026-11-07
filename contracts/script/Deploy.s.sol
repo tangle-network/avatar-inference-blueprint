@@ -14,8 +14,7 @@ contract Deploy is Script {
         AvatarBSM implementation = new AvatarBSM();
         address manager =
             address(new ERC1967Proxy(address(implementation), abi.encodeCall(AvatarBSM.initialize, (token, registry))));
-        console2.log("DEPLOY_AVATAR_BSM_IMPL=%s", vm.toString(address(implementation)));
         vm.stopBroadcast();
-        console2.log("DEPLOY_AVATAR_BSM_PROXY=%s", vm.toString(manager));
+        console2.log("DEPLOY_MANAGER=%s", vm.toString(manager));
     }
 }
